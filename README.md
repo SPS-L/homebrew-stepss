@@ -46,7 +46,9 @@ If STEPSS is already in Applications from a `.dmg`, move it to the Trash first. 
 | `workflow_dispatch` | by hand |
 | `push` to `main` | checks a hand edit; rewrites nothing |
 
-It rewrites exactly two lines, `version` and `sha256`, and commits only if they moved. Everything else in the cask is hand-edited. The hash comes from the GitHub API's own per-asset digest. A `verify` job then installs the cask on a macOS runner and runs `tools/check-engine-libs.sh`, which fails when a bundled engine links a library the cask's dependencies do not provide.
+`tools/update-cask.sh` rewrites exactly two lines, `version` and `sha256`, and the workflow commits only if they moved. Everything else in the cask is hand-edited. The hash comes from the GitHub API's own per-asset digest. The script never moves the cask backwards: if the newest release carrying a `.dmg` is older than the cask, the run fails and a person decides.
+
+Nothing is pushed until it has been installed. The job runs on macOS, commits the rewrite locally, installs the cask from that local commit, and runs `tools/check-engine-libs.sh`, which fails when a bundled engine links a library from a formula the cask does not declare. Only then does it push, so a cask that cannot install never reaches `brew upgrade`.
 
 ### Two things that will break this quietly
 
@@ -57,10 +59,10 @@ It rewrites exactly two lines, `version` and `sha256`, and commits only if they 
 
 | When | Do |
 |---|---|
-| Every release | Nothing. The dispatch updates the cask; check the `verify` job is green. |
+| Every release | Nothing. The dispatch updates the cask; check the run is green. |
 | `.app` renamed, or the dmg layout changes | Edit `app` in the cask by hand; the workflow only touches `version` and `sha256`. |
 | Engine linking changes | Adjust `depends_on formula:`. `tools/check-engine-libs.sh` names the library. |
-| Red `verify` job | Read the failing step: `brew audit` names the stanza, the library check names the file. |
+| Red run | Read the failing step: `brew audit` names the stanza, the library check names the library and its formula, and a refused downgrade names both versions. Nothing was pushed. |
 | Dropped dispatch | The Monday schedule catches it, or run `gh workflow run update-cask.yml`. |
 
 ### Troubleshooting
