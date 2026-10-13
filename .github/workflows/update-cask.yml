@@ -83,7 +83,13 @@ jobs:
           git add "$CASK"
           git commit -m "stepss: $VERSION"
 
+      # The audit asks the GitHub API about the release. Unauthenticated, that
+      # is 60 requests an hour shared by every job leaving the same runner
+      # address, and the audit fails with a rate-limit error that has nothing
+      # to do with the cask.
       - name: Audit and install the cask
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           brew tap sps-l/stepss "$GITHUB_WORKSPACE"
