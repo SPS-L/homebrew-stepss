@@ -1,0 +1,4 @@
+# Never commit these. A stray gitlink under .claude/worktrees/ in a component
+# once broke `git clone --recurse-submodules` for the whole umbrella repo.
+/.claude/
+.mcp.json
