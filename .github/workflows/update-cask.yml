@@ -1,0 +1,171 @@
+name: Update the Homebrew cask
+
+# Re-points Casks/stepss.rb at the newest stepss-java-ui release that carries a
+# .dmg, and commits the result. A tap IS its git repository, so what is
+# committed here is exactly what `brew upgrade` reads.
+#
+# Only two lines are ever rewritten: version and sha256. Everything else in the
+# cask is hand-edited.
+#
+# No ${{ }} expression is interpolated into the text of a run: script. Values
+# arrive through env: and are read as quoted shell variables, which is the
+# convention across every stepss workflow and the reason a hostile release tag
+# cannot reach this job's credentials.
+
+on:
+  # From the promote job of stepss-java-ui's release workflow, once the release
+  # is published with every platform attached.
+  repository_dispatch:
+    types: [stepss-release]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Casks/**'
+      - 'tools/**'
+      - '.github/workflows/update-cask.yml'
+  # Dispatches do not retry. A 401 or a dropped event otherwise means this tap
+  # silently stops tracking releases. The run is idempotent, and commits
+  # nothing when the cask already names the newest release.
+  schedule:
+    - cron: '41 4 * * 1'
+
+concurrency:
+  group: homebrew-cask
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM: SPS-L/stepss-java-ui
+  SCAN_RELEASES: '5'
+  CASK: Casks/stepss.rb
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Find the newest release carrying a dmg
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCHED_TAG: ${{ github.event.client_payload.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${DISPATCHED_TAG:-}" ]; then
+            echo "Woken by $DISPATCHED_TAG."
+          fi
+          tags=$(gh release list --repo "$UPSTREAM" --limit "$SCAN_RELEASES" \
+                   --exclude-drafts --exclude-pre-releases \
+                   --json tagName --jq '.[].tagName')
+          tag=""
+          for candidate in $tags; do
+            # `// ""`, because jq renders a null digest as the string "null",
+            # which is not empty and would be written into the cask as a hash.
+            line=$(gh api "repos/$UPSTREAM/releases/tags/$candidate" \
+                     --jq '.assets[] | select(.name | endswith(".dmg"))
+                           | "\(.name)\t\(.digest // "")\t\(.browser_download_url)"' \
+                     | head -1 || true)
+            if [ -n "$line" ]; then
+              tag="$candidate"
+              name=$(printf '%s' "$line" | cut -f1)
+              digest=$(printf '%s' "$line" | cut -f2)
+              url=$(printf '%s' "$line" | cut -f3)
+              break
+            fi
+            echo "no dmg in $candidate"
+          done
+          if [ -z "$tag" ]; then
+            echo "None of the last $SCAN_RELEASES releases carries a .dmg."
+            exit 1
+          fi
+          hash="${digest#sha256:}"
+          if [ -z "$hash" ]; then
+            echo "The API reports no digest for $name; hashing the download."
+            curl -fsSL -o asset.dmg "$url"
+            hash=$(sha256sum asset.dmg | cut -d' ' -f1)
+            rm -f asset.dmg
+          fi
+          version="${tag#v}"
+          # Both values are about to be written into a Ruby file by sed.
+          if ! printf '%s' "$hash" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "Not a SHA-256: '$hash'."
+            exit 1
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+(\.[0-9]+)+$'; then
+            echo "Not a version this cask can carry: '$version'."
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "hash=$hash"
+          } >> "$GITHUB_OUTPUT"
+          echo "$name from $tag, sha256 $hash"
+
+      # Skipped on push so the workflow cannot loop on a commit, its own or a
+      # hand edit: a push only ever verifies what was pushed.
+      - name: Rewrite the cask
+        id: rewrite
+        if: github.event_name != 'push'
+        env:
+          VERSION: ${{ steps.find.outputs.version }}
+          HASH: ${{ steps.find.outputs.hash }}
+        run: |
+          set -euo pipefail
+          sed -i -E "s|^  version \".*\"|  version \"$VERSION\"|" "$CASK"
+          sed -i -E "s|^  sha256 \".*\"|  sha256 \"$HASH\"|" "$CASK"
+          grep -q "^  version \"$VERSION\"" "$CASK"
+          grep -q "^  sha256 \"$HASH\"" "$CASK"
+          if git diff --quiet -- "$CASK"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Already at $VERSION."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff -- "$CASK"
+          fi
+
+      - name: Commit it
+        if: steps.rewrite.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.find.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$CASK"
+          git commit -m "stepss: $VERSION"
+          git push
+
+  # On macOS after every run, so a renamed .app, a broken dmg or an engine that
+  # started linking a library the cask does not provide fails here rather than
+  # on every user's machine.
+  verify:
+    needs: update
+    runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Audit and install the cask
+        run: |
+          set -euo pipefail
+          brew tap sps-l/stepss "$GITHUB_WORKSPACE"
+          brew style sps-l/stepss
+          brew audit --cask --online sps-l/stepss/stepss
+          brew install --cask sps-l/stepss/stepss
+          test -d /Applications/STEPSS.app
+
+      - name: Check the engines find their libraries
+        run: bash tools/check-engine-libs.sh /Applications/STEPSS.app
+
+      - name: Uninstall
+        run: brew uninstall --cask stepss
