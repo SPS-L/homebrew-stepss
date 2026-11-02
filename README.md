@@ -23,7 +23,7 @@ If STEPSS is already in Applications from a `.dmg`, move it to the Trash first. 
 - **Apple Silicon.** There is no Intel macOS build of the engines.
 - **The current release only.** The tap serves one version. To install a specific older build, take its `.dmg` from the [releases page](https://github.com/SPS-L/stepss-java-ui/releases).
 - **A network connection on first launch.** The application is signed and notarized. The notarization ticket is stapled to the `.dmg`, not to the application inside it, so macOS verifies the installed copy with Apple the first time it opens.
-- **This is not an official Homebrew cask**, and nothing in it has been through the Homebrew maintainers' review. Naming the cask in full, as the command above does, is what tells Homebrew you trust it; `brew trust --tap sps-l/stepss` trusts the whole tap instead.
+- **This is not an official Homebrew cask**, and nothing in it has been through the Homebrew maintainers' review. Naming the cask in full, as the command above does, is what tells Homebrew you trust it; `brew trust sps-l/stepss` trusts the whole tap instead. Homebrew refuses to load a cask from an untrusted third-party tap, so a script that audits or inspects the cask before installing it needs `brew trust --cask sps-l/stepss/stepss` first.
 
 ## Licensing
 
@@ -68,6 +68,7 @@ Nothing is pushed until it has been installed. The job runs on macOS, commits th
 ### Troubleshooting
 
 - `Error: Cask 'stepss' is unavailable`: use the full name `sps-l/stepss/stepss`, or run `brew tap sps-l/stepss` first.
+- `Refusing to load cask sps-l/stepss/stepss from untrusted tap`: the cask was named without its tap, or the tap was added by hand. Run `brew trust --cask sps-l/stepss/stepss`, or install by the full name as above.
 - `It seems there is already an App at '/Applications/STEPSS.app'`: a copy installed from a `.dmg` is in the way. Move it to the Trash and install again.
 - `dyld: Library not loaded: .../libgfortran.5.dylib`: `gcc` was removed after installing. Run `brew install gcc`.
 - `"STEPSS" cannot be opened because the developer cannot be verified`: the Mac was offline at first launch. Connect and open it again.

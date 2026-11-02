@@ -87,12 +87,20 @@ jobs:
       # is 60 requests an hour shared by every job leaving the same runner
       # address, and the audit fails with a rate-limit error that has nothing
       # to do with the cask.
+      #
+      # Homebrew refuses to load anything from a third-party tap until it is
+      # trusted. An install by full name trusts that cask implicitly, but the
+      # audit runs first and does not, so it failed with "Refusing to load
+      # cask ... from untrusted tap". Trust the one cask, not the whole tap,
+      # and do not reach for HOMEBREW_NO_REQUIRE_TAP_TRUST, which is
+      # deprecated and due to be removed.
       - name: Audit and install the cask
         env:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           brew tap sps-l/stepss "$GITHUB_WORKSPACE"
+          brew trust --cask sps-l/stepss/stepss
           brew style sps-l/stepss
           brew audit --cask --online sps-l/stepss/stepss
           brew install --cask sps-l/stepss/stepss
