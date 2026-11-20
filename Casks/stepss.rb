@@ -1,6 +1,6 @@
 cask "stepss" do
-  version "3.84"
-  sha256 "932a1188eb5b95462dc8af370a2409fcbd712eab463dc4593e9c938f473d390d"
+  version "3.85"
+  sha256 "1e752783e488595e677081171ae316a23df7d0d21bfb1e29f258eaf7b372e7b5"
 
   url "https://github.com/SPS-L/stepss-java-ui/releases/download/v#{version}/STEPSS-#{version}.dmg"
   name "STEPSS"
